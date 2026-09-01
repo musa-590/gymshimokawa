@@ -512,7 +512,6 @@ function VentaMembresia({ cajaId }: { cajaId: string }) {
                     className="w-full px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground flex justify-between"
                     onMouseDown={() => {
                       setClienteId(c.id)
-                      setClienteSearch('')
                       setShowClientes(false)
                     }}
                   >
