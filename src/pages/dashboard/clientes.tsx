@@ -51,17 +51,19 @@ export function ClientesPage() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<string>('todos')
+  const [filtroVip, setFiltroVip] = useState<boolean>(false)
   const [page, setPage] = useState(1)
   const [modalOpen, setModalOpen] = useState(false)
   const [editando, setEditando] = useState<Cliente | null>(null)
   const [eliminando, setEliminando] = useState<Cliente | null>(null)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['clientes', search, filtroEstado, page],
+    queryKey: ['clientes', search, filtroEstado, filtroVip, page],
     queryFn: () =>
       listarClientes({
         search: search || undefined,
         estado: filtroEstado === 'todos' ? undefined : (filtroEstado as Cliente['estado']),
+        es_vip: filtroVip ? true : undefined,
         page,
         pageSize: PAGE_SIZE,
       }),
@@ -162,6 +164,17 @@ export function ClientesPage() {
             <SelectItem value="inactivo">Inactivos</SelectItem>
           </SelectContent>
         </Select>
+        <button
+          onClick={() => { setFiltroVip(!filtroVip); setPage(1) }}
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-all ${
+            filtroVip
+              ? 'bg-yellow-400 border-yellow-400 text-zinc-900 shadow-sm'
+              : 'bg-muted border-border text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Star className="h-3.5 w-3.5" />
+          VIP {filtroVip ? 'ON' : 'OFF'}
+        </button>
       </div>
 
       <Card>

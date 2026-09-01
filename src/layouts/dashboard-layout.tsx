@@ -1,14 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   Users, UserCog, Package, CreditCard, Gift,
-  DollarSign, ClipboardCheck, TrendingDown, Bell, LogOut, LayoutDashboard, Menu, X, Shield, FileSpreadsheet,
+  DollarSign, ClipboardCheck, TrendingDown, Bell, LogOut, LayoutDashboard, Menu, X, Shield, FileSpreadsheet, Sun, Moon,
 } from 'lucide-react'
 import { useSupabase } from '@/providers/supabase-provider'
 import { useUserRole } from '@/hooks/use-user-role'
+import { useTheme } from '@/hooks/use-theme'
 import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -26,10 +27,36 @@ const navigation = [
 ]
 
 export function DashboardLayout() {
-  const { supabase, user } = useSupabase()
+  const { supabase, user, authEvent } = useSupabase()
   const { data: rol } = useUserRole()
   const navigate = useNavigate()
+  const { theme, toggle } = useTheme()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [welcome, setWelcome] = useState<{ open: boolean; nombre: string }>({ open: false, nombre: '' })
+  const welcomeShown = useRef(false)
+
+  useEffect(() => {
+    if (!user || authEvent !== 'SIGNED_IN' || welcomeShown.current) return
+    let cancelled = false
+    supabase
+      .from('usuarios')
+      .select('nombre')
+      .eq('id', user.id)
+      .single()
+      .then(({ data }) => {
+        if (cancelled) return
+        welcomeShown.current = true
+        setWelcome({ open: true, nombre: (data as { nombre?: string } | null)?.nombre ?? user.email ?? '' })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [user, authEvent, supabase])
+
+  const closeWelcome = () => {
+    welcomeShown.current = true
+    setWelcome({ open: false, nombre: '' })
+  }
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -39,7 +66,7 @@ export function DashboardLayout() {
 
   const sidebar = (
     <>
-      <div className="p-4 flex items-center gap-3 border-b border-white/10">
+      <div className="p-4 flex items-center gap-3 border-b border-sidebar-border">
         <img
           src="/logo.png"
           alt="Logo GYM SHIMOKAWA"
@@ -61,10 +88,10 @@ export function DashboardLayout() {
             style={{ animationDelay: `${i * 0.04}s` }}
             className={({ isActive }) =>
               cn(
-                'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 animate-slide-in-left',
+                'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-bold text-sidebar-fg transition-all duration-200 animate-slide-in-left',
                 isActive
-                  ? 'bg-yellow-400/15 text-yellow-400 shadow-[inset_3px_0_0_0_#f9b310]'
-                  : 'text-zinc-300 hover:bg-white/5 hover:text-white hover:translate-x-1'
+                  ? 'bg-sidebar-active-bg shadow-[inset_3px_0_0_0_#f9b310]'
+                  : 'hover:bg-sidebar-hover hover:translate-x-1'
               )
             }
           >
@@ -77,11 +104,18 @@ export function DashboardLayout() {
           </NavLink>
         ))}
       </nav>
-      <div className="p-4 border-t border-white/10 space-y-3">
-        <p className="text-xs text-zinc-400 truncate">{user?.email}</p>
+      <div className="p-4 border-t border-sidebar-border space-y-3">
+        <p className="text-xs font-bold text-sidebar-fg truncate">{user?.email}</p>
+        <button
+          onClick={toggle}
+          className="w-full flex items-center justify-center gap-2 rounded-lg border border-sidebar-border px-3 py-2 text-sm font-bold transition-all hover:bg-sidebar-hover hover:scale-[1.02] btn-press"
+        >
+          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          Modo {theme === 'dark' ? 'claro' : 'oscuro'}
+        </button>
         <button
           onClick={handleLogout}
-          className="w-full flex items-center justify-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm transition-all hover:bg-red-500/15 hover:border-red-400/40 hover:text-red-300 hover:scale-[1.02] btn-press"
+          className="w-full flex items-center justify-center gap-2 rounded-lg border border-sidebar-border px-3 py-2 text-sm font-bold transition-all hover:bg-red-500/15 hover:border-red-400/40 hover:text-red-300 hover:scale-[1.02] btn-press"
         >
           <LogOut size={16} />
           Cerrar sesión
@@ -92,20 +126,40 @@ export function DashboardLayout() {
 
   return (
     <div className="min-h-screen bg-muted/40 flex animate-fade-in">
-      <aside className="hidden md:flex w-60 flex-col bg-zinc-950 text-white fixed inset-y-0 z-20">
+      <aside className="hidden md:flex w-60 flex-col bg-sidebar-bg text-sidebar-fg fixed inset-y-0 z-20 rounded-r-[2.5rem]">
         {sidebar}
       </aside>
 
       <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
-        <DialogContent className="left-0 top-0 h-full max-w-xs translate-x-0 translate-y-0 rounded-none bg-zinc-950 text-white p-0 gap-0 border-r border-white/10 [&>button]:hidden">
+        <DialogContent className="left-0 top-0 h-full max-w-xs translate-x-0 translate-y-0 rounded-none rounded-r-[2.5rem] bg-sidebar-bg text-sidebar-fg p-0 gap-0 border-r border-sidebar-border [&>button]:hidden">
           <DialogTitle className="sr-only">Menú</DialogTitle>
           <button
             onClick={() => setMenuOpen(false)}
-            className="absolute right-4 top-4 z-10 text-zinc-400 hover:text-white"
+            className="absolute right-4 top-4 z-10 text-sidebar-muted hover:text-sidebar-fg"
           >
             <X size={20} />
           </button>
           {sidebar}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={welcome.open} onOpenChange={(o) => !o && closeWelcome()}>
+        <DialogContent className="max-w-sm text-center animate-scale-in">
+          <DialogHeader className="items-center text-center">
+            <div className="mx-auto mb-2 h-16 w-16 rounded-full bg-yellow-400/15 flex items-center justify-center animate-glow-pulse">
+              <img src="/logo.png" alt="Logo GYM SHIMOKAWA" className="h-12 w-12 rounded-full border-2 border-yellow-400 object-cover" />
+            </div>
+            <DialogTitle className="text-xl font-bold">¡Bienvenido, {welcome.nombre}!</DialogTitle>
+            <DialogDescription>
+              Bienvenido al panel de GYM SHIMOKAWA, <span className="font-semibold text-foreground">"{welcome.nombre}"</span>. Empezá a gestionar tu gimnasio.
+            </DialogDescription>
+          </DialogHeader>
+          <button
+            onClick={closeWelcome}
+            className="mt-2 w-full rounded-lg bg-yellow-400 px-4 py-2 text-sm font-bold text-zinc-950 hover:bg-yellow-300 btn-press"
+          >
+            ¡Empezar!
+          </button>
         </DialogContent>
       </Dialog>
 

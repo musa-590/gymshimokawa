@@ -24,6 +24,6 @@ export async function actualizarPersonal(id: string, data: Partial<PersonalFormD
 }
 
 export async function eliminarPersonal(id: string) {
-  const { error } = await supabase.from('personal').delete().eq('id', id)
+  const { error } = await supabase.rpc('eliminar_personal', { p_personal_id: id })
   if (error) throw error
 }

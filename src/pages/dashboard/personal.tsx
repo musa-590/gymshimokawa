@@ -28,6 +28,7 @@ export function PersonalPage() {
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editando, setEditando] = useState<Personal | null>(null)
+  const [eliminando, setEliminando] = useState<Personal | null>(null)
 
   const { data: personal, isLoading } = useQuery({
     queryKey: ['personal', search],
@@ -39,6 +40,7 @@ export function PersonalPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['personal'] })
       toast.success('Personal eliminado')
+      setEliminando(null)
     },
     onError: (e: Error) => toast.error(e.message),
   })
@@ -96,13 +98,34 @@ export function PersonalPage() {
               getKey={(p) => p.id}
               emptyText="No hay personal"
               onEdit={(p) => { setEditando(p); setModalOpen(true) }}
-              onDelete={(p) => eliminarMutation.mutate(p.id)}
+              onDelete={(p) => setEliminando(p)}
             />
           )}
         </CardContent>
       </Card>
 
       <PersonalDialog open={modalOpen} onOpenChange={setModalOpen} persona={editando} />
+
+      <Dialog open={!!eliminando} onOpenChange={(o) => !o && setEliminando(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Eliminar personal</DialogTitle>
+            <DialogDescription>
+              ¿Seguro que deseas eliminar a <strong>{eliminando?.nombre}</strong>? Se eliminarán también sus registros de asistencia y egresos. Esta acción no se puede deshacer.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEliminando(null)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              onClick={() => eliminando && eliminarMutation.mutate(eliminando.id)}
+              disabled={eliminarMutation.isPending}
+            >
+              {eliminarMutation.isPending ? 'Eliminando...' : 'Eliminar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

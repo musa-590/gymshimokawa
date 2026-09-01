@@ -9,8 +9,9 @@ import {
 import { crearVenta } from '@/lib/api/ventas'
 import { buscarProductosVenta } from '@/lib/api/productos'
 import { listarTiposMembresia, crearPagoMembresia } from '@/lib/api/membresias'
-import { listarClientes } from '@/lib/api/clientes'
+import { listarClientes, buscarClientesPorCampo } from '@/lib/api/clientes'
 import { listarFiados, crearFiado, pagarFiado, anularFiado } from '@/lib/api/fiados'
+import supabase from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -178,6 +179,26 @@ function VentaProductos({ cajaId }: { cajaId: string }) {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [carrito, setCarrito] = useState<CarritoItem[]>([])
+  const [clienteId, setClienteId] = useState('')
+  const [clienteSearch, setClienteSearch] = useState('')
+  const [buscarPor, setBuscarPor] = useState<BuscarPor>('nombre')
+  const [showClientes, setShowClientes] = useState(false)
+
+  const { data: clientesBuscados } = useQuery({
+    queryKey: ['clientes-buscar-venta', buscarPor, clienteSearch],
+    queryFn: async () => {
+      if (!clienteSearch.trim()) return []
+      return buscarClientesPorCampo(buscarPor, clienteSearch.trim())
+    },
+    enabled: clienteSearch.trim().length >= 1,
+  })
+
+  const clienteSeleccionado = clientesBuscados?.find((c) => c.id === clienteId)
+
+  const handleSearchChange = (value: string) => {
+    if (buscarPor === 'nombre') setClienteSearch(value)
+    else setClienteSearch(value.replace(/\D/g, ''))
+  }
 
   const { data: resultados } = useQuery({
     queryKey: ['buscar-productos', search],
@@ -190,6 +211,7 @@ function VentaProductos({ cajaId }: { cajaId: string }) {
       const subtotal = carrito.reduce((acc, it) => acc + it.cantidad * it.precio_unitario, 0)
       return crearVenta({
         caja_id: cajaId,
+        cliente_id: clienteId || undefined,
         subtotal,
         descuento_aplicado: 0,
         total: subtotal,
@@ -201,6 +223,8 @@ function VentaProductos({ cajaId }: { cajaId: string }) {
       queryClient.invalidateQueries({ queryKey: ['buscar-productos'] })
       toast.success('Venta registrada')
       setCarrito([])
+      setClienteId('')
+      setClienteSearch('')
     },
     onError: (e: Error) => toast.error(e.message),
   })
@@ -214,6 +238,51 @@ function VentaProductos({ cajaId }: { cajaId: string }) {
           <CardTitle className="text-base">Buscar productos</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Cliente (opcional)</Label>
+            <div className="flex gap-2">
+              <Select value={buscarPor} onValueChange={(v) => { setBuscarPor(v as BuscarPor); setClienteSearch(''); setClienteId('') }}>
+                <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="nombre">Nombre</SelectItem>
+                  <SelectItem value="dni">DNI</SelectItem>
+                  <SelectItem value="carnet">Carnet</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder={clienteSeleccionado ? `${clienteSeleccionado.nombre} (${clienteSeleccionado.dni})` : `Buscar por ${buscarPor}...`}
+                  value={clienteId
+                    ? (buscarPor === 'nombre' ? clienteSeleccionado?.nombre ?? '' : buscarPor === 'dni' ? clienteSeleccionado?.dni ?? '' : clienteSeleccionado?.carnet_extranjeria ?? '')
+                    : clienteSearch}
+                  onChange={(e) => { setClienteId(''); handleSearchChange(e.target.value); setShowClientes(true) }}
+                  onFocus={() => setShowClientes(true)}
+                  onBlur={() => setTimeout(() => setShowClientes(false), 200)}
+                  className="pl-9"
+                />
+                {clienteId && (
+                  <button type="button" onClick={() => { setClienteId(''); setClienteSearch('') }} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">✕</button>
+                )}
+              </div>
+            </div>
+            {showClientes && !clienteId && clienteSearch.length >= 1 && (
+              <div className="absolute z-50 w-full mt-1 rounded-md border bg-popover text-popover-foreground shadow-md max-h-48 overflow-auto">
+                {clientesBuscados?.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">Sin resultados</div>
+                ) : (
+                  clientesBuscados?.map((c) => (
+                    <button key={c.id} type="button"
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground flex justify-between"
+                      onMouseDown={() => { setClienteId(c.id); setShowClientes(false) }}>
+                      <span className="font-medium">{c.nombre}</span>
+                      <span className="text-muted-foreground">DNI: {c.dni}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -300,37 +369,63 @@ function VentaProductos({ cajaId }: { cajaId: string }) {
   )
 }
 
+type BuscarPor = 'nombre' | 'dni' | 'carnet'
+
 function VentaMembresia({ cajaId }: { cajaId: string }) {
   const queryClient = useQueryClient()
   const [clienteId, setClienteId] = useState('')
   const [clienteSearch, setClienteSearch] = useState('')
+  const [buscarPor, setBuscarPor] = useState<BuscarPor>('nombre')
   const [tipoId, setTipoId] = useState('')
   const [showClientes, setShowClientes] = useState(false)
 
-  const { data: clientes } = useQuery({
-    queryKey: ['clientes-activos'],
-    queryFn: async () => (await listarClientes({ estado: 'activo' })).data,
+  const { data: clientes, refetch: refetchClientes } = useQuery({
+    queryKey: ['clientes-buscar', buscarPor, clienteSearch],
+    queryFn: async () => {
+      if (!clienteSearch.trim()) return []
+      return buscarClientesPorCampo(buscarPor, clienteSearch.trim())
+    },
+    enabled: clienteSearch.trim().length >= 1,
   })
 
-  const clientesFiltrados = clientes?.filter((c) => {
-    const q = clienteSearch.toLowerCase()
-    return c.nombre.toLowerCase().includes(q) || c.dni.includes(q)
-  }) ?? []
-
   const clienteSeleccionado = clientes?.find((c) => c.id === clienteId)
+
+  const diasRestantes = (() => {
+    if (!clienteSeleccionado?.fecha_vencimiento_membresia) return 0
+    const venc = new Date(clienteSeleccionado.fecha_vencimiento_membresia)
+    const hoy = new Date()
+    const diff = Math.ceil((venc.getTime() - hoy.getTime()) / 86400000)
+    return diff > 0 ? diff : 0
+  })()
 
   const { data: tipos } = useQuery({
     queryKey: ['tipos-membresia-activos'],
     queryFn: () => listarTiposMembresia(true),
   })
 
+  const placeholder = buscarPor === 'nombre'
+    ? 'Escribir nombre...'
+    : buscarPor === 'dni'
+      ? 'Solo números...'
+      : 'Solo números...'
+
+  const handleSearchChange = (value: string) => {
+    if (buscarPor === 'nombre') {
+      setClienteSearch(value)
+    } else {
+      setClienteSearch(value.replace(/\D/g, ''))
+    }
+  }
+
   const pagoMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!clienteId || !tipoId) throw new Error('Debe seleccionar cliente y tipo de membresía')
       const tipo = tipos!.find((t) => t.id === tipoId)!
       const hoy = new Date()
-      const vencimiento = new Date(hoy.getTime() + tipo.duracion_dias * 86400000)
-      return crearPagoMembresia({
+      const totalDias = tipo.duracion_dias + diasRestantes
+      const vencimiento = new Date(hoy.getTime() + totalDias * 86400000)
+
+      await crearPagoMembresia({
         caja_id: cajaId,
         cliente_id: clienteId,
         tipo_membresia_id: tipoId,
@@ -340,6 +435,15 @@ function VentaMembresia({ cajaId }: { cajaId: string }) {
         fecha_inicio: hoy.toISOString(),
         fecha_vencimiento: vencimiento.toISOString(),
       })
+
+      const nuevoEstado = 'activo' as const
+      const patch: Record<string, unknown> = { estado: nuevoEstado }
+      patch.fecha_vencimiento_membresia = vencimiento.toISOString()
+      patch.tipo_membresia_id = tipoId
+      patch.fecha_inicio_membresia = hoy.toISOString()
+
+      const { error } = await supabase.from('clientes').update(patch).eq('id', clienteId)
+      if (error) throw error
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clientes'] })
@@ -357,16 +461,29 @@ function VentaMembresia({ cajaId }: { cajaId: string }) {
         <CardTitle className="text-base">Vender membresía</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 max-w-md">
+        <div className="space-y-2">
+          <Label>Buscar cliente por</Label>
+          <Select value={buscarPor} onValueChange={(v) => { setBuscarPor(v as BuscarPor); setClienteSearch(''); setClienteId('') }}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="nombre">Nombre</SelectItem>
+              <SelectItem value="dni">DNI</SelectItem>
+              <SelectItem value="carnet">Carnet de extranjería</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <div className="space-y-2 relative">
-          <Label>Cliente</Label>
+          <Label>{buscarPor === 'nombre' ? 'Nombre' : buscarPor === 'dni' ? 'DNI' : 'Carnet de extranjería'}</Label>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder={clienteSeleccionado ? `${clienteSeleccionado.nombre} (${clienteSeleccionado.dni})` : "Buscar por nombre o DNI..."}
-              value={clienteId ? `${clienteSeleccionado?.nombre} (${clienteSeleccionado?.dni})` : clienteSearch}
+              placeholder={clienteSeleccionado ? `${clienteSeleccionado.nombre} (${buscarPor === 'dni' ? clienteSeleccionado.dni : buscarPor === 'carnet' ? clienteSeleccionado.carnet_extranjeria ?? '' : clienteSeleccionado.dni})` : placeholder}
+              value={clienteId
+                ? (buscarPor === 'nombre' ? clienteSeleccionado?.nombre ?? '' : buscarPor === 'dni' ? clienteSeleccionado?.dni ?? '' : clienteSeleccionado?.carnet_extranjeria ?? '')
+                : clienteSearch}
               onChange={(e) => {
                 setClienteId('')
-                setClienteSearch(e.target.value)
+                handleSearchChange(e.target.value)
                 setShowClientes(true)
               }}
               onFocus={() => setShowClientes(true)}
@@ -385,10 +502,10 @@ function VentaMembresia({ cajaId }: { cajaId: string }) {
           </div>
           {showClientes && !clienteId && clienteSearch.length >= 1 && (
             <div className="absolute z-50 w-full mt-1 rounded-md border bg-popover text-popover-foreground shadow-md max-h-60 overflow-auto">
-              {clientesFiltrados.length === 0 ? (
+              {clientes?.length === 0 ? (
                 <div className="px-3 py-2 text-sm text-muted-foreground">Sin resultados</div>
               ) : (
-                clientesFiltrados.map((c) => (
+                clientes?.map((c) => (
                   <button
                     key={c.id}
                     type="button"
@@ -400,7 +517,18 @@ function VentaMembresia({ cajaId }: { cajaId: string }) {
                     }}
                   >
                     <span className="font-medium">{c.nombre}</span>
-                    <span className="text-muted-foreground">DNI: {c.dni}</span>
+                    <span className="flex items-center gap-2">
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${
+                        c.estado === 'activo' ? 'bg-green-500/20 text-green-400' :
+                        c.estado === 'por_vencer' ? 'bg-yellow-500/20 text-yellow-400' :
+                        'bg-red-500/20 text-red-400'
+                      }`}>
+                        {c.estado === 'activo' ? 'Activo' : c.estado === 'por_vencer' ? 'Por vencer' : 'Inactivo'}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {buscarPor === 'dni' ? `DNI: ${c.dni}` : buscarPor === 'carnet' ? `Carnet: ${c.carnet_extranjeria ?? '—'}` : `DNI: ${c.dni}`}
+                      </span>
+                    </span>
                   </button>
                 ))
               )}
@@ -414,12 +542,29 @@ function VentaMembresia({ cajaId }: { cajaId: string }) {
             <SelectContent>
               {tipos?.map((t) => (
                 <SelectItem key={t.id} value={t.id}>
-                  {t.nombre} · {t.duracion_días} días · S/ {t.precio.toFixed(2)}
+                  {t.nombre} · {t.duracion_dias} días · S/ {t.precio.toFixed(2)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
+        {clienteSeleccionado && diasRestantes > 0 && (
+          <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/30 p-3 text-sm">
+            <p className="text-yellow-400 font-medium">
+              Este cliente tiene {diasRestantes} día{diasRestantes !== 1 ? 's' : ''} restante{diasRestantes !== 1 ? 's' : ''} de su membresía actual.
+            </p>
+            <p className="text-muted-foreground mt-1">
+              Se sumarán al nuevo plan: {tipoId ? `${(tipos?.find((t) => t.id === tipoId)?.duracion_dias ?? 0) + diasRestantes} días totales` : 'Seleccioná un plan para ver el total'}
+            </p>
+          </div>
+        )}
+        {clienteSeleccionado && clienteSeleccionado.estado === 'inactivo' && (
+          <div className="rounded-lg bg-blue-500/10 border border-blue-500/30 p-3 text-sm">
+            <p className="text-blue-400 font-medium">
+              Este cliente está inactivo. Al comprar una membresía, su estado cambiará a ACTIVO automáticamente.
+            </p>
+          </div>
+        )}
         <Button onClick={() => pagoMutation.mutate()} disabled={pagoMutation.isPending || !clienteId || !tipoId}>
           {pagoMutation.isPending ? 'Registrando...' : 'Cobrar membresía'}
         </Button>

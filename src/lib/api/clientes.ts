@@ -5,6 +5,7 @@ export async function listarClientes(params?: {
   search?: string
   estado?: ClienteEstado
   tipoMembresiaId?: string
+  es_vip?: boolean
   page?: number
   pageSize?: number
 }) {
@@ -26,6 +27,9 @@ export async function listarClientes(params?: {
   }
   if (params?.tipoMembresiaId) {
     query = query.eq('tipo_membresia_id', params.tipoMembresiaId)
+  }
+  if (params?.es_vip !== undefined) {
+    query = query.eq('es_vip', params.es_vip)
   }
 
   const { data, count, error } = await query
@@ -98,6 +102,17 @@ export async function importarClientesBulk(clientes: (ClienteFormData & { regist
 }
 
 // --- VIP ---
+
+export async function buscarClientesPorCampo(campo: 'nombre' | 'dni' | 'carnet', valor: string) {
+  let query = supabase.from('clientes')
+    .select('id, nombre, dni, carnet_extranjeria, es_extranjero, estado, fecha_vencimiento_membresia')
+  if (campo === 'nombre') query = query.ilike('nombre', `%${valor}%`)
+  else if (campo === 'dni') query = query.ilike('dni', `%${valor}%`)
+  else query = query.ilike('carnet_extranjeria', `%${valor}%`)
+  const { data, error } = await query.limit(50)
+  if (error) throw error
+  return data
+}
 
 export async function listarClientesVip() {
   const { data, error } = await supabase.from('v_clientes_vip').select('*').order('nombre', { ascending: true })
