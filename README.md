@@ -1,32 +1,91 @@
-# React + TypeScript + Vite
+# GYM SHIMOKAWA — Sistema de Gestión
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Sistema web integral para la administración del gimnasio GYM SHIMOKAWA. Control de clientes, membresías, ventas, asistencia, finanzas y más.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Frontend:** React 19 + TypeScript + Tailwind CSS v4
+- **Build:** Vite
+- **Backend:** Supabase (PostgreSQL + Auth + RLS)
+- **Deploy:** Vercel
+- **Gráficos:** Recharts
 
-## React Compiler
+## Módulos
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| Módulo | Función |
+|--------|---------|
+| **Dashboard** | Resumen general con estadísticas y gráficos |
+| **Clientes** | Alta, baja, edición, filtro por membresía, DNI/carné extranjería |
+| **Membresías** | Crear, editar, eliminar membresías con precios y duración |
+| **Asistencia** | Registro de entrada/salida de clientes |
+| **Ventas** | Registro de ventas de productos y membresías |
+| **Productos** | Inventario de productos del gimnasio |
+| **Caja** | Control de apertura/cierre de caja diario |
+| **Egresos** | Registro de gastos operativos |
+| **Fiados** | Control de créditos a clientes |
+| **Descuentos** | Gestión de descuentos aplicables |
+| **Promociones** | Crear y gestionar promociones activas |
+| **Personal** | Administración de empleados |
+| **Usuarios** | CRUD de usuarios del sistema (solo admin) |
+| **Recordatorios** | Alertas de vencimiento de membresías |
+| **Reportes** | Reportes financieros y de asistencia |
+| **Exportar** | Exportación de datos a Excel (.xlsx) |
 
-## Expanding the Oxlint configuration
+## Seguridad
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+- **RLS (Row Level Security)** habilitado en todas las tablas
+- **Funciones SECURITY DEFINER** para operaciones sensibles (eliminar usuarios/clientes)
+- **Autenticación** por email + contraseña via Supabase Auth
+- **Roles:** admin, recepcionista, supervisor, vendedor
+- **Protección de rutas** según permisos por sección
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+## Variables de entorno
+
+Crear archivo `.env`:
+
+```env
+VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
+VITE_SUPABASE_ANON_KEY=tu-anon-key
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Desarrollo local
+
+```bash
+npm install
+npm run dev
+```
+
+## Build
+
+```bash
+npm run build
+npm run preview
+```
+
+## Deploy a Vercel
+
+1. Conectar el repo en [vercel.com](https://vercel.com)
+2. Framework: **Vite**
+3. Build command: `npm run build`
+4. Output directory: `dist`
+5. Las variables de entorno se configuran en el dashboard de Vercel
+
+## Estructura
+
+```
+src/
+├── components/       # Componentes reutilizables (UI, gráficos, tablas)
+├── hooks/            # Custom hooks (useUserRole)
+├── layouts/          # Layout del dashboard con sidebar
+├── lib/
+│   ├── api/          # Funciones de acceso a Supabase por módulo
+│   ├── supabase.ts   # Cliente Supabase
+│   ├── types.ts      # Definiciones TypeScript
+│   └── utils.ts      # Utilidades
+├── pages/            # Páginas por ruta
+│   ├── dashboard/    # Todas las secciones del sistema
+│   └── login.tsx     # Pantalla de login
+├── providers/        # Context providers (Query, Supabase)
+├── App.tsx           # Rutas y lazy loading
+└── main.tsx          # Entry point
+```
