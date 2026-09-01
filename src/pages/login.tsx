@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
@@ -14,13 +14,57 @@ interface LoginForm {
   password: string
 }
 
+const MAX_ATTEMPTS = 5
+const LOCKOUT_MS = 5 * 60 * 1000 // 5 minutos
+
+function getLockoutEnd(): number {
+  return Number(localStorage.getItem('login_lockout') || '0')
+}
+
+function getAttemptCount(): number {
+  return Number(localStorage.getItem('login_attempts') || '0')
+}
+
+function recordFailedAttempt() {
+  const count = getAttemptCount() + 1
+  localStorage.setItem('login_attempts', String(count))
+  if (count >= MAX_ATTEMPTS) {
+    localStorage.setItem('login_lockout', String(Date.now() + LOCKOUT_MS))
+  }
+}
+
+function resetAttempts() {
+  localStorage.removeItem('login_attempts')
+  localStorage.removeItem('login_lockout')
+}
+
 export function LoginPage() {
   const { supabase } = useSupabase()
   const navigate = useNavigate()
   const [submitting, setSubmitting] = useState(false)
+  const [lockoutEnd, setLockoutEnd] = useState(getLockoutEnd)
   const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>()
 
+  const locked = lockoutEnd > Date.now()
+  const secondsLeft = locked ? Math.ceil((lockoutEnd - Date.now()) / 1000) : 0
+
+  useEffect(() => {
+    if (!locked) return
+    const id = setInterval(() => {
+      if (Date.now() >= lockoutEnd) {
+        setLockoutEnd(0)
+        resetAttempts()
+        clearInterval(id)
+      }
+    }, 1000)
+    return () => clearInterval(id)
+  }, [locked, lockoutEnd])
+
   const onSubmit = async (data: LoginForm) => {
+    if (locked) {
+      toast.error(`Demasiados intentos. Esperá ${secondsLeft}s`)
+      return
+    }
     setSubmitting(true)
     const { error } = await supabase.auth.signInWithPassword({
       email: data.email,
@@ -28,9 +72,14 @@ export function LoginPage() {
     })
     setSubmitting(false)
     if (error) {
-      toast.error(error.message)
+      recordFailedAttempt()
+      const remaining = MAX_ATTEMPTS - getAttemptCount()
+      toast.error(remaining > 0
+        ? `Credenciales incorrectas. Te quedan ${remaining} intentos`
+        : 'Cuenta bloqueada temporalmente. Esperá 5 minutos')
       return
     }
+    resetAttempts()
     toast.success('Bienvenido')
     navigate('/dashboard')
   }
