@@ -379,7 +379,7 @@ function VentaMembresia({ cajaId }: { cajaId: string }) {
   const [tipoId, setTipoId] = useState('')
   const [showClientes, setShowClientes] = useState(false)
 
-  const { data: clientes, refetch: refetchClientes } = useQuery({
+  const { data: clientes } = useQuery({
     queryKey: ['clientes-buscar', buscarPor, clienteSearch],
     queryFn: async () => {
       if (!clienteSearch.trim()) return []
