@@ -8,7 +8,7 @@ import {
 } from '@/lib/api/clientes'
 import { listarTiposMembresia } from '@/lib/api/membresias'
 import { listarDescuentos } from '@/lib/api/descuentos'
-import type { Cliente } from '@/lib/types'
+import type { Cliente, ClienteFormData, ClienteEstado } from '@/lib/types'
 import { useSupabase } from '@/providers/supabase-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -288,13 +288,13 @@ function ClienteDialog({
         if (!disponible) throw new Error('El DNI ya está registrado')
       }
       const { es_extranjero, carnet_extranjeria, dni, ...rest } = data
-      const payload = {
+      const payload: ClienteFormData = {
         ...rest,
         es_extranjero: es_extranjero ?? false,
-        carnet_extranjeria: es_extranjero ? (carnet_extranjeria || null) : null,
+        carnet_extranjeria: es_extranjero ? (carnet_extranjeria || undefined) : undefined,
         dni: es_extranjero ? '' : dni,
         es_vip: rest.es_vip ?? false,
-        estado: rest.estado ? (rest.estado as Cliente['estado']) : undefined,
+        estado: rest.estado as ClienteEstado | undefined,
       }
       if (cliente) {
         return actualizarCliente(cliente.id, payload)
