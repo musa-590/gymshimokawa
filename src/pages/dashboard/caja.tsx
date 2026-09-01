@@ -303,12 +303,21 @@ function VentaProductos({ cajaId }: { cajaId: string }) {
 function VentaMembresia({ cajaId }: { cajaId: string }) {
   const queryClient = useQueryClient()
   const [clienteId, setClienteId] = useState('')
+  const [clienteSearch, setClienteSearch] = useState('')
   const [tipoId, setTipoId] = useState('')
+  const [showClientes, setShowClientes] = useState(false)
 
   const { data: clientes } = useQuery({
     queryKey: ['clientes-activos'],
     queryFn: async () => (await listarClientes({ estado: 'activo' })).data,
   })
+
+  const clientesFiltrados = clientes?.filter((c) => {
+    const q = clienteSearch.toLowerCase()
+    return c.nombre.toLowerCase().includes(q) || c.dni.includes(q)
+  }) ?? []
+
+  const clienteSeleccionado = clientes?.find((c) => c.id === clienteId)
 
   const { data: tipos } = useQuery({
     queryKey: ['tipos-membresia-activos'],
@@ -336,6 +345,7 @@ function VentaMembresia({ cajaId }: { cajaId: string }) {
       queryClient.invalidateQueries({ queryKey: ['clientes'] })
       toast.success('Membresía vendida')
       setClienteId('')
+      setClienteSearch('')
       setTipoId('')
     },
     onError: (e: Error) => toast.error(e.message),
@@ -347,16 +357,55 @@ function VentaMembresia({ cajaId }: { cajaId: string }) {
         <CardTitle className="text-base">Vender membresía</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 max-w-md">
-        <div className="space-y-2">
+        <div className="space-y-2 relative">
           <Label>Cliente</Label>
-          <Select value={clienteId} onValueChange={setClienteId}>
-            <SelectTrigger><SelectValue placeholder="Selecciona cliente" /></SelectTrigger>
-            <SelectContent>
-              {clientes?.map((c) => (
-                <SelectItem key={c.id} value={c.id}>{c.nombre} ({c.dni})</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder={clienteSeleccionado ? `${clienteSeleccionado.nombre} (${clienteSeleccionado.dni})` : "Buscar por nombre o DNI..."}
+              value={clienteId ? `${clienteSeleccionado?.nombre} (${clienteSeleccionado?.dni})` : clienteSearch}
+              onChange={(e) => {
+                setClienteId('')
+                setClienteSearch(e.target.value)
+                setShowClientes(true)
+              }}
+              onFocus={() => setShowClientes(true)}
+              onBlur={() => setTimeout(() => setShowClientes(false), 200)}
+              className="pl-9"
+            />
+            {clienteId && (
+              <button
+                type="button"
+                onClick={() => { setClienteId(''); setClienteSearch('') }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          {showClientes && !clienteId && clienteSearch.length >= 1 && (
+            <div className="absolute z-50 w-full mt-1 rounded-md border bg-popover text-popover-foreground shadow-md max-h-60 overflow-auto">
+              {clientesFiltrados.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-muted-foreground">Sin resultados</div>
+              ) : (
+                clientesFiltrados.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground flex justify-between"
+                    onMouseDown={() => {
+                      setClienteId(c.id)
+                      setClienteSearch('')
+                      setShowClientes(false)
+                    }}
+                  >
+                    <span className="font-medium">{c.nombre}</span>
+                    <span className="text-muted-foreground">DNI: {c.dni}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </div>
         <div className="space-y-2">
           <Label>Tipo de membresía</Label>
@@ -365,13 +414,13 @@ function VentaMembresia({ cajaId }: { cajaId: string }) {
             <SelectContent>
               {tipos?.map((t) => (
                 <SelectItem key={t.id} value={t.id}>
-                  {t.nombre} · {t.duracion_dias} días · S/ {t.precio.toFixed(2)}
+                  {t.nombre} · {t.duracion_días} días · S/ {t.precio.toFixed(2)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={() => pagoMutation.mutate()} disabled={pagoMutation.isPending}>
+        <Button onClick={() => pagoMutation.mutate()} disabled={pagoMutation.isPending || !clienteId || !tipoId}>
           {pagoMutation.isPending ? 'Registrando...' : 'Cobrar membresía'}
         </Button>
       </CardContent>
