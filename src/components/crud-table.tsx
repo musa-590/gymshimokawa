@@ -56,12 +56,12 @@ export function CrudTable<T>({
                   ) : (
                     <div className="flex justify-end gap-1">
                       {onEdit && (
-                        <Button variant="ghost" size="icon" onClick={() => onEdit(row)}>
+                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); onEdit(row) }}>
                           <Pencil />
                         </Button>
                       )}
                       {onDelete && (
-                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => onDelete(row)}>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={(e) => { e.stopPropagation(); onDelete(row) }}>
                           <Trash2 />
                         </Button>
                       )}
@@ -92,12 +92,12 @@ export function CrudTable<T>({
             ) : (onEdit || onDelete) && (
               <div className="flex justify-end gap-2 pt-2 border-t">
                 {onEdit && (
-                  <Button variant="outline" size="sm" onClick={() => onEdit(row)}>
+                  <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(row) }}>
                     <Pencil /> Editar
                   </Button>
                 )}
                 {onDelete && (
-                  <Button variant="outline" size="sm" className="text-destructive" onClick={() => onDelete(row)}>
+                  <Button variant="outline" size="sm" className="text-destructive" onClick={(e) => { e.stopPropagation(); onDelete(row) }}>
                     <Trash2 /> Eliminar
                   </Button>
                 )}

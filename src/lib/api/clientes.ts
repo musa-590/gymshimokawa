@@ -101,6 +101,24 @@ export async function importarClientesBulk(clientes: (ClienteFormData & { regist
   return data as Cliente[]
 }
 
+export async function obtenerHistorialCliente(clienteId: string) {
+  const [{ data: ventas, error: errV }, { data: pagos, error: errP }] = await Promise.all([
+    supabase.from('ventas')
+      .select('*, detalle_ventas(*, productos(nombre))')
+      .eq('cliente_id', clienteId)
+      .order('created_at', { ascending: false })
+      .limit(20),
+    supabase.from('pagos_membresia')
+      .select('*, tipos_membresia(nombre)')
+      .eq('cliente_id', clienteId)
+      .order('created_at', { ascending: false })
+      .limit(20),
+  ])
+  if (errV) throw errV
+  if (errP) throw errP
+  return { ventas, pagos }
+}
+
 // --- VIP ---
 
 export async function buscarClientesPorCampo(campo: 'nombre' | 'dni' | 'carnet', valor: string) {

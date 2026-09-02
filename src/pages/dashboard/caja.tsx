@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Banknote, History, Minus, Plus, Search, ShoppingCart } from 'lucide-react'
+import { Banknote, History, Minus, Plus, Search, ShoppingCart, UserPlus } from 'lucide-react'
 import {
   obtenerCajaAbierta, abrirCaja, cerrarCaja, listarHistorialCajas, obtenerDetalleCaja,
 } from '@/lib/api/caja'
@@ -11,6 +11,9 @@ import { buscarProductosVenta } from '@/lib/api/productos'
 import { listarTiposMembresia, crearPagoMembresia } from '@/lib/api/membresias'
 import { listarClientes, buscarClientesPorCampo } from '@/lib/api/clientes'
 import { listarFiados, crearFiado, pagarFiado, anularFiado } from '@/lib/api/fiados'
+import { ClienteDialog } from '@/components/cliente-dialog'
+import { useSupabase } from '@/providers/supabase-provider'
+import type { Cliente } from '@/lib/types'
 import supabase from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -177,12 +180,15 @@ export function CajaPage() {
 
 function VentaProductos({ cajaId }: { cajaId: string }) {
   const queryClient = useQueryClient()
+  const { user } = useSupabase()
   const [search, setSearch] = useState('')
   const [carrito, setCarrito] = useState<CarritoItem[]>([])
   const [clienteId, setClienteId] = useState('')
   const [clienteSearch, setClienteSearch] = useState('')
   const [buscarPor, setBuscarPor] = useState<BuscarPor>('nombre')
   const [showClientes, setShowClientes] = useState(false)
+  const [registrarCliente, setRegistrarCliente] = useState(false)
+  const [clienteNuevo, setClienteNuevo] = useState<Cliente | null>(null)
 
   const { data: clientesBuscados } = useQuery({
     queryKey: ['clientes-buscar-venta', buscarPor, clienteSearch],
@@ -193,11 +199,18 @@ function VentaProductos({ cajaId }: { cajaId: string }) {
     enabled: clienteSearch.trim().length >= 1,
   })
 
-  const clienteSeleccionado = clientesBuscados?.find((c) => c.id === clienteId)
+  const clienteSeleccionado = clientesBuscados?.find((c) => c.id === clienteId) ?? clienteNuevo ?? undefined
 
   const handleSearchChange = (value: string) => {
     if (buscarPor === 'nombre') setClienteSearch(value)
     else setClienteSearch(value.replace(/\D/g, ''))
+  }
+
+  const handleClienteCreado = (c: Cliente) => {
+    setClienteNuevo(c)
+    setClienteId(c.id)
+    setShowClientes(false)
+    queryClient.invalidateQueries({ queryKey: ['clientes-buscar-venta'] })
   }
 
   const { data: resultados } = useQuery({
@@ -269,7 +282,16 @@ function VentaProductos({ cajaId }: { cajaId: string }) {
             {showClientes && !clienteId && clienteSearch.length >= 1 && (
               <div className="absolute z-50 w-full mt-1 rounded-md border bg-popover text-popover-foreground shadow-md max-h-48 overflow-auto">
                 {clientesBuscados?.length === 0 ? (
-                  <div className="px-3 py-2 text-sm text-muted-foreground">Sin resultados</div>
+                  <div className="p-2 space-y-1">
+                    <div className="px-3 py-1.5 text-sm text-muted-foreground">Sin resultados</div>
+                    <button
+                      type="button"
+                      className="w-full px-3 py-2 text-left text-sm font-medium text-primary hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+                      onMouseDown={() => setRegistrarCliente(true)}
+                    >
+                      <UserPlus className="h-4 w-4" /> Registrar nuevo cliente
+                    </button>
+                  </div>
                 ) : (
                   clientesBuscados?.map((c) => (
                     <button key={c.id} type="button"
@@ -283,6 +305,18 @@ function VentaProductos({ cajaId }: { cajaId: string }) {
               </div>
             )}
           </div>
+          <ClienteDialog
+            open={registrarCliente}
+            onOpenChange={setRegistrarCliente}
+            cliente={null}
+            userId={user?.id ?? ''}
+            initial={
+              buscarPor === 'dni' ? { dni: clienteSearch.replace(/\D/g, '') } :
+              buscarPor === 'carnet' ? { carnet: clienteSearch.replace(/\D/g, ''), es_extranjero: true } :
+              undefined
+            }
+            onCreated={(c) => handleClienteCreado(c)}
+          />
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -373,11 +407,14 @@ type BuscarPor = 'nombre' | 'dni' | 'carnet'
 
 function VentaMembresia({ cajaId }: { cajaId: string }) {
   const queryClient = useQueryClient()
+  const { user } = useSupabase()
   const [clienteId, setClienteId] = useState('')
   const [clienteSearch, setClienteSearch] = useState('')
   const [buscarPor, setBuscarPor] = useState<BuscarPor>('nombre')
   const [tipoId, setTipoId] = useState('')
   const [showClientes, setShowClientes] = useState(false)
+  const [registrarCliente, setRegistrarCliente] = useState(false)
+  const [clienteNuevo, setClienteNuevo] = useState<Cliente | null>(null)
 
   const { data: clientes } = useQuery({
     queryKey: ['clientes-buscar', buscarPor, clienteSearch],
@@ -388,7 +425,7 @@ function VentaMembresia({ cajaId }: { cajaId: string }) {
     enabled: clienteSearch.trim().length >= 1,
   })
 
-  const clienteSeleccionado = clientes?.find((c) => c.id === clienteId)
+  const clienteSeleccionado = (clientes?.find((c) => c.id === clienteId) as Cliente | undefined) ?? clienteNuevo ?? undefined
 
   const diasRestantes = (() => {
     if (!clienteSeleccionado?.fecha_vencimiento_membresia) return 0
@@ -503,7 +540,16 @@ function VentaMembresia({ cajaId }: { cajaId: string }) {
           {showClientes && !clienteId && clienteSearch.length >= 1 && (
             <div className="absolute z-50 w-full mt-1 rounded-md border bg-popover text-popover-foreground shadow-md max-h-60 overflow-auto">
               {clientes?.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-muted-foreground">Sin resultados</div>
+                <div className="p-2 space-y-1">
+                  <div className="px-3 py-1.5 text-sm text-muted-foreground">Sin resultados</div>
+                  <button
+                    type="button"
+                    className="w-full px-3 py-2 text-left text-sm font-medium text-primary hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+                    onMouseDown={() => setRegistrarCliente(true)}
+                  >
+                    <UserPlus className="h-4 w-4" /> Registrar nuevo cliente
+                  </button>
+                </div>
               ) : (
                 clientes?.map((c) => (
                   <button
@@ -534,6 +580,23 @@ function VentaMembresia({ cajaId }: { cajaId: string }) {
             </div>
           )}
         </div>
+        <ClienteDialog
+          open={registrarCliente}
+          onOpenChange={setRegistrarCliente}
+          cliente={null}
+          userId={user?.id ?? ''}
+          initial={
+            buscarPor === 'dni' ? { dni: clienteSearch.replace(/\D/g, '') } :
+            buscarPor === 'carnet' ? { carnet: clienteSearch.replace(/\D/g, ''), es_extranjero: true } :
+            undefined
+          }
+          onCreated={(c) => {
+            setClienteNuevo(c)
+            setClienteId(c.id)
+            setShowClientes(false)
+            queryClient.invalidateQueries({ queryKey: ['clientes-buscar'] })
+          }}
+        />
         <div className="space-y-2">
           <Label>Tipo de membresía</Label>
           <Select value={tipoId} onValueChange={setTipoId}>

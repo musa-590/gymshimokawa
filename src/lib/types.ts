@@ -258,12 +258,12 @@ export interface ClienteFormData {
   es_extranjero?: boolean
   carnet_extranjeria?: string
   telefono?: string
-  fecha_cumpleanos?: string
+  fecha_cumpleanos?: string | null
   tipo_membresia_id?: string
   descuento_id?: string
   es_vip?: boolean
   estado?: ClienteEstado
-  fecha_vencimiento_membresia?: string
+  fecha_vencimiento_membresia?: string | null
 }
 
 export interface PersonalFormData {

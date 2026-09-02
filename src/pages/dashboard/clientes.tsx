@@ -1,21 +1,19 @@
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Plus, Star, Globe, Trash2 } from 'lucide-react'
 import {
-  listarClientes, crearCliente, actualizarCliente, eliminarCliente, eliminarClienteDefinitivo, verificarDniDisponible, verificarCarnetDisponible,
+  listarClientes, obtenerHistorialCliente, eliminarCliente, eliminarClienteDefinitivo,
 } from '@/lib/api/clientes'
 import { listarTiposMembresia } from '@/lib/api/membresias'
-import { listarDescuentos } from '@/lib/api/descuentos'
-import type { Cliente, ClienteFormData, ClienteEstado } from '@/lib/types'
+import type { Cliente } from '@/lib/types'
 import { useSupabase } from '@/providers/supabase-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { CrudTable, type Column } from '@/components/crud-table'
+import { ClienteDialog } from '@/components/cliente-dialog'
 import { Pagination } from '@/components/ui/pagination'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -32,37 +30,26 @@ const estadoBadge = {
 
 const estadoLabel = { activo: 'Activo', por_vencer: 'Por vencer', inactivo: 'Inactivo' }
 
-interface FormValues {
-  nombre: string
-  dni: string
-  es_extranjero?: boolean
-  carnet_extranjeria?: string
-  telefono?: string
-  fecha_cumpleanos?: string
-  tipo_membresia_id?: string
-  descuento_id?: string
-  es_vip?: boolean
-  estado?: string
-  fecha_vencimiento_membresia?: string
-}
-
 export function ClientesPage() {
   const { user } = useSupabase()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<string>('todos')
+  const [filtroMembresia, setFiltroMembresia] = useState<string>('todos')
   const [filtroVip, setFiltroVip] = useState<boolean>(false)
   const [page, setPage] = useState(1)
   const [modalOpen, setModalOpen] = useState(false)
   const [editando, setEditando] = useState<Cliente | null>(null)
   const [eliminando, setEliminando] = useState<Cliente | null>(null)
+  const [verDetalle, setVerDetalle] = useState<Cliente | null>(null)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['clientes', search, filtroEstado, filtroVip, page],
+    queryKey: ['clientes', search, filtroEstado, filtroMembresia, filtroVip, page],
     queryFn: () =>
       listarClientes({
         search: search || undefined,
         estado: filtroEstado === 'todos' ? undefined : (filtroEstado as Cliente['estado']),
+        tipoMembresiaId: filtroMembresia === 'todos' ? undefined : filtroMembresia,
         es_vip: filtroVip ? true : undefined,
         page,
         pageSize: PAGE_SIZE,
@@ -70,6 +57,11 @@ export function ClientesPage() {
   })
   const clientes = data?.data ?? []
   const total = data?.count ?? 0
+
+  const { data: tiposMembresia } = useQuery({
+    queryKey: ['tipos-membresia'],
+    queryFn: () => listarTiposMembresia(),
+  })
 
   const desactivarMutation = useMutation({
     mutationFn: (id: string) => eliminarCliente(id),
@@ -164,6 +156,17 @@ export function ClientesPage() {
             <SelectItem value="inactivo">Inactivos</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={filtroMembresia} onValueChange={(v) => { setFiltroMembresia(v); setPage(1) }}>
+          <SelectTrigger className="w-56">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todas las membresías</SelectItem>
+            {tiposMembresia?.map((t) => (
+              <SelectItem key={t.id} value={t.id}>{t.nombre}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <button
           onClick={() => { setFiltroVip(!filtroVip); setPage(1) }}
           className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-all ${
@@ -194,6 +197,7 @@ export function ClientesPage() {
                 emptyText="No hay clientes"
                 onEdit={(c) => { setEditando(c); setModalOpen(true) }}
                 onDelete={(c) => setEliminando(c)}
+                onRowClick={setVerDetalle}
               />
               <Pagination page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
             </>
@@ -207,6 +211,8 @@ export function ClientesPage() {
         cliente={editando}
         userId={user?.id ?? ''}
       />
+
+      <DetalleClienteDialog cliente={verDetalle} onClose={() => setVerDetalle(null)} />
 
       <Dialog open={!!eliminando} onOpenChange={() => setEliminando(null)}>
         <DialogContent>
@@ -260,247 +266,108 @@ export function ClientesPage() {
   )
 }
 
-function ClienteDialog({
-  open, onOpenChange, cliente, userId,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  cliente: Cliente | null
-  userId: string
-}) {
-  const queryClient = useQueryClient()
-  const {
-    register, handleSubmit, reset, watch, formState: { errors },
-  } = useForm<FormValues>({
-    defaultValues: {
-      es_extranjero: cliente?.es_extranjero ?? false,
-    },
-  })
-  const esExtranjero = watch('es_extranjero')
-
-  const { data: tipos } = useQuery({
-    queryKey: ['tipos-membresia-activos'],
-    queryFn: () => listarTiposMembresia(true),
-    enabled: open,
-  })
-  const { data: descuentos } = useQuery({
-    queryKey: ['descuentos'],
-    queryFn: listarDescuentos,
-    enabled: open,
+function DetalleClienteDialog({ cliente, onClose }: { cliente: Cliente | null; onClose: () => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['cliente-detalle', cliente?.id],
+    queryFn: () => (cliente ? obtenerHistorialCliente(cliente.id) : Promise.resolve(null)),
+    enabled: !!cliente,
   })
 
-  const mutation = useMutation({
-    mutationFn: async (data: FormValues) => {
-      if (data.es_extranjero) {
-        if (!data.carnet_extranjeria) throw new Error('El carné de extranjería es obligatorio')
-        const disponible = await verificarCarnetDisponible(data.carnet_extranjeria, cliente?.id)
-        if (!disponible) throw new Error('El carné de extranjería ya está registrado')
-      } else {
-        if (!data.dni) throw new Error('El DNI es obligatorio')
-        const disponible = await verificarDniDisponible(data.dni, cliente?.id)
-        if (!disponible) throw new Error('El DNI ya está registrado')
-      }
-      const { es_extranjero, carnet_extranjeria, dni, ...rest } = data
-      const payload: ClienteFormData = {
-        ...rest,
-        es_extranjero: es_extranjero ?? false,
-        carnet_extranjeria: es_extranjero ? (carnet_extranjeria || undefined) : undefined,
-        dni: es_extranjero ? '' : dni,
-        es_vip: rest.es_vip ?? false,
-        estado: rest.estado as ClienteEstado | undefined,
-      }
-      if (cliente) {
-        return actualizarCliente(cliente.id, payload)
-      }
-      return crearCliente({
-        ...payload,
-        registrado_por: userId,
-      })
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['clientes'] })
-      toast.success(cliente ? 'Cliente actualizado' : 'Cliente creado')
-      onOpenChange(false)
-      reset()
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
+  const totalProductos = (data?.ventas ?? []).reduce((acc: number, v: any) => acc + Number(v.total), 0)
+  const totalMembresias = (data?.pagos ?? []).reduce((acc: number, p: any) => acc + Number(p.monto_final), 0)
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto">
+    <Dialog open={!!cliente} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto max-w-3xl">
         <DialogHeader>
-          <DialogTitle>{cliente ? 'Editar cliente' : 'Nuevo cliente'}</DialogTitle>
+          <DialogTitle className="flex flex-wrap items-center gap-2">
+            {cliente?.nombre}
+            {cliente && (
+              <>
+                <Badge variant={estadoBadge[cliente.estado]}>{estadoLabel[cliente.estado]}</Badge>
+                {cliente.es_vip && <Badge variant="warning"><Star className="h-3 w-3" /> VIP</Badge>}
+                {cliente.es_extranjero && <Badge variant="outline"><Globe className="h-3 w-3" /> Ext</Badge>}
+              </>
+            )}
+          </DialogTitle>
           <DialogDescription>
-            Completa los datos del cliente para {cliente ? 'actualizarlo' : 'registrarlo'}.
+            {cliente?.es_extranjero ? (cliente.carnet_extranjeria ?? '—') : cliente?.dni}
+            {cliente?.telefono ? ` · ${cliente.telefono}` : ''}
+            {cliente?.fecha_cumpleanos
+              ? ` · Cumple: ${new Date(cliente.fecha_cumpleanos).toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })}`
+              : ''}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit((data) => mutation.mutate(data))} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="nombre">Nombre completo</Label>
-            <Input
-              id="nombre"
-              defaultValue={cliente?.nombre ?? ''}
-              placeholder="Ej: Juan Pérez"
-              {...register('nombre', { required: 'El nombre es obligatorio' })}
-            />
-            {errors.nombre && <p className="text-sm text-destructive">{errors.nombre.message}</p>}
-          </div>
 
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              defaultChecked={cliente?.es_extranjero ?? false}
-              className="h-4 w-4 rounded border-input accent-yellow-500"
-              {...register('es_extranjero')}
-            />
-            <span className="inline-flex items-center gap-1">
-              <Globe className="h-4 w-4 text-blue-500" /> Es extranjero
-            </span>
-          </label>
-
-          {esExtranjero ? (
-            <div className="space-y-2">
-              <Label htmlFor="carnet_extranjeria">Carné de Extranjería</Label>
-              <Input
-                id="carnet_extranjeria"
-                defaultValue={cliente?.carnet_extranjeria ?? ''}
-                placeholder="Solo números"
-                disabled={!!cliente}
-                inputMode="numeric"
-                pattern="[0-9]*"
-                onKeyDown={(e) => { if (!/[0-9]/.test(e.key) && !['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault() }}
-                {...register('carnet_extranjeria', esExtranjero ? { required: 'El carné de extranjería es obligatorio', pattern: { value: /^\d+$/, message: 'Solo se permiten números' } } : undefined)}
-              />
-              {errors.carnet_extranjeria && <p className="text-sm text-destructive">{errors.carnet_extranjeria.message}</p>}
+        {isLoading ? (
+          <p className="text-muted-foreground py-8 text-center">Cargando historial...</p>
+        ) : cliente ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-lg bg-muted p-3">
+                <p className="text-muted-foreground text-xs">Membresía actual</p>
+                <p className="font-semibold">{cliente.tipo_membresia?.nombre ?? 'Sin membresía'}</p>
+                {cliente.fecha_vencimiento_membresia && (
+                  <p className="text-xs text-muted-foreground">
+                    Vence: {new Date(cliente.fecha_vencimiento_membresia).toLocaleDateString('es-PE')}
+                  </p>
+                )}
+              </div>
+              <div className="rounded-lg bg-muted p-3">
+                <p className="text-muted-foreground text-xs">Gasto acumulado</p>
+                <p className="font-semibold">S/ {(totalProductos + totalMembresias).toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground">
+                  S/ {totalMembresias.toFixed(2)} membresías · S/ {totalProductos.toFixed(2)} productos
+                </p>
+              </div>
             </div>
-          ) : (
-            <div className="space-y-2">
-              <Label htmlFor="dni">DNI</Label>
-              <Input
-                id="dni"
-                defaultValue={cliente?.dni ?? ''}
-                placeholder="8 dígitos"
-                disabled={!!cliente}
-                inputMode="numeric"
-                pattern="[0-9]*"
-                onKeyDown={(e) => { if (!/[0-9]/.test(e.key) && !['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault() }}
-                {...register('dni', { required: 'El DNI es obligatorio', pattern: { value: /^\d{8}$/, message: 'El DNI debe tener 8 dígitos' } })}
-              />
-              {errors.dni && <p className="text-sm text-destructive">{errors.dni.message}</p>}
-            </div>
-          )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="telefono">Teléfono</Label>
-              <Input
-                id="telefono"
-                defaultValue={cliente?.telefono ?? ''}
-                placeholder="Solo números"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                onKeyDown={(e) => { if (!/[0-9]/.test(e.key) && !['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault() }}
-                {...register('telefono')}
+            <div>
+              <p className="text-sm font-semibold mb-2">Membresías adquiridas ({data?.pagos?.length ?? 0})</p>
+              <CrudTable
+                columns={[
+                  {
+                    key: 'fecha',
+                    label: 'Fecha',
+                    render: (p: any) => new Date(p.created_at).toLocaleDateString('es-PE'),
+                  },
+                  { key: 'plan', label: 'Plan', render: (p: any) => p.tipos_membresia?.nombre ?? '—' },
+                  { key: 'vence', label: 'Vence', render: (p: any) => new Date(p.fecha_vencimiento).toLocaleDateString('es-PE') },
+                  { key: 'metodo', label: 'Método', render: (p: any) => <span className="capitalize">{p.metodo_pago}</span> },
+                  { key: 'monto', label: 'Monto', render: (p: any) => <span className="font-semibold tabular-nums">S/ {Number(p.monto_final).toFixed(2)}</span> },
+                ]}
+                rows={data?.pagos ?? []}
+                getKey={(p: any) => p.id}
+                emptyText="Sin membresías adquiridas"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="fecha_cumpleanos">Fecha de cumpleaños</Label>
-              <Input
-                id="fecha_cumpleanos"
-                type="date"
-                defaultValue={cliente?.fecha_cumpleanos?.split('T')[0] ?? ''}
-                {...register('fecha_cumpleanos')}
+
+            <div>
+              <p className="text-sm font-semibold mb-2">Compras de productos ({data?.ventas?.length ?? 0})</p>
+              <CrudTable
+                columns={[
+                  {
+                    key: 'fecha',
+                    label: 'Fecha',
+                    render: (v: any) => new Date(v.created_at).toLocaleDateString('es-PE'),
+                  },
+                  {
+                    key: 'productos',
+                    label: 'Productos',
+                    render: (v: any) => (v.detalle_ventas ?? []).map((d: any) => `${d.cantidad}x ${d.productos?.nombre ?? ''}`).join(', ') || '—',
+                  },
+                  { key: 'metodo', label: 'Método', render: (v: any) => <span className="capitalize">{v.metodo_pago}</span> },
+                  { key: 'total', label: 'Total', render: (v: any) => <span className="font-semibold tabular-nums">S/ {Number(v.total).toFixed(2)}</span> },
+                ]}
+                rows={data?.ventas ?? []}
+                getKey={(v: any) => v.id}
+                emptyText="Sin compras de productos"
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="tipo_membresia_id">Tipo de membresía</Label>
-              <Select
-                value={cliente?.tipo_membresia_id ?? undefined}
-                onValueChange={(v) => register('tipo_membresia_id').onChange({ target: { value: v === 'none' ? undefined : v } })}
-              >
-                <SelectTrigger id="tipo_membresia_id">
-                  <SelectValue placeholder="Sin membresía" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sin membresía</SelectItem>
-                  {tipos?.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>{t.nombre} - S/ {t.precio.toFixed(2)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="descuento_id">Descuento</Label>
-              <Select
-                value={cliente?.descuento_id ?? undefined}
-                onValueChange={(v) => register('descuento_id').onChange({ target: { value: v === 'none' ? undefined : v } })}
-              >
-                <SelectTrigger id="descuento_id">
-                  <SelectValue placeholder="Sin descuento" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sin descuento</SelectItem>
-                  {descuentos?.filter((d: any) => d.activo).map((d: any) => (
-                    <SelectItem key={d.id} value={d.id}>
-                      {d.nombre} - {d.tipo === 'porcentaje' ? `${d.valor}%` : `S/ ${d.valor.toFixed(2)}`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          {cliente && (
-            <div className="space-y-2">
-              <Label htmlFor="estado">Estado</Label>
-              <Select
-                value={cliente?.estado ?? 'activo'}
-                onValueChange={(v) => register('estado').onChange({ target: { value: v } })}
-              >
-                <SelectTrigger id="estado">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="activo">Activo</SelectItem>
-                  <SelectItem value="por_vencer">Por vencer</SelectItem>
-                  <SelectItem value="inactivo">Inactivo</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              defaultChecked={cliente?.es_vip ?? false}
-              className="h-4 w-4 rounded border-input accent-yellow-500"
-              {...register('es_vip')}
-            />
-            <span className="inline-flex items-center gap-1">
-              <Star className="h-4 w-4 text-yellow-500" /> Cliente VIP
-            </span>
-          </label>
-          {cliente && (
-            <div className="space-y-2">
-              <Label htmlFor="fecha_vencimiento_membresia">Fecha de vencimiento de membresía</Label>
-              <Input
-                id="fecha_vencimiento_membresia"
-                type="date"
-                defaultValue={cliente?.fecha_vencimiento_membresia?.split('T')[0] ?? ''}
-                {...register('fecha_vencimiento_membresia')}
-              />
-            </div>
-          )}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? 'Guardando...' : cliente ? 'Actualizar' : 'Crear'}
-            </Button>
-          </DialogFooter>
-        </form>
+        ) : (
+          <p className="text-muted-foreground py-6 text-center">Sin datos</p>
+        )}
       </DialogContent>
     </Dialog>
   )
