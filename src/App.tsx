@@ -4,6 +4,8 @@ import { useSupabase } from './providers/supabase-provider'
 import { LoginPage } from './pages/login'
 import { DashboardLayout } from './layouts/dashboard-layout'
 
+const DevelopPage = lazy(() => import('./pages/develop').then((m) => ({ default: m.DevelopPage })))
+
 const DashboardHome = lazy(() => import('./pages/dashboard/home').then((m) => ({ default: m.DashboardHome })))
 const ClientesPage = lazy(() => import('./pages/dashboard/clientes').then((m) => ({ default: m.ClientesPage })))
 const MembresiasPage = lazy(() => import('./pages/dashboard/membresias').then((m) => ({ default: m.MembresiasPage })))
@@ -69,6 +71,7 @@ export default function App() {
           <Route path="usuarios" element={<UsuariosPage />} />
           <Route path="exportar" element={<ExportarPage />} />
         </Route>
+        <Route path="/develop" element={<ProtectedRoute><DevelopPage /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Suspense>

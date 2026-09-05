@@ -223,6 +223,15 @@ export interface CumpleanosProximo {
   proximo_cumpleanos: string
 }
 
+export interface AlertaPagoPlataforma {
+  id: boolean
+  activado: boolean
+  fecha_vencimiento: string | null
+  dias_aviso: number
+  created_at: string
+  updated_at: string
+}
+
 export type FiadoEstado = 'pendiente' | 'pagado' | 'anulado'
 
 export interface Fiado {

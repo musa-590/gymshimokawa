@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   Users, UserCog, Package, CreditCard, Gift,
   DollarSign, ClipboardCheck, TrendingDown, Bell, LogOut, LayoutDashboard, Menu, X, Shield, FileSpreadsheet, Sun, Moon,
@@ -7,6 +8,7 @@ import {
 import { useSupabase } from '@/providers/supabase-provider'
 import { useUserRole } from '@/hooks/use-user-role'
 import { useTheme } from '@/hooks/use-theme'
+import { obtenerAlertaPago } from '@/lib/api/alerta-pago'
 import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -30,10 +32,39 @@ export function DashboardLayout() {
   const { supabase, user, authEvent } = useSupabase()
   const { data: rol } = useUserRole()
   const navigate = useNavigate()
+  const location = useLocation()
   const { theme, toggle } = useTheme()
   const [menuOpen, setMenuOpen] = useState(false)
   const [welcome, setWelcome] = useState<{ open: boolean; nombre: string }>({ open: false, nombre: '' })
+  const [reminderOpen, setReminderOpen] = useState(false)
   const welcomeShown = useRef(false)
+  const justSignedIn = useRef(false)
+  const prevPath = useRef(location.pathname)
+
+  const { data: alerta } = useQuery({
+    queryKey: ['alerta-pago'],
+    queryFn: obtenerAlertaPago,
+  })
+  const inicioHoy = new Date()
+  inicioHoy.setHours(0, 0, 0, 0)
+  const diasRestantes = alerta?.fecha_vencimiento
+    ? Math.round((new Date(`${alerta.fecha_vencimiento}T00:00:00`).getTime() - inicioHoy.getTime()) / 86400000)
+    : Infinity
+  const debeMostrar = !!alerta?.activado && alerta.fecha_vencimiento != null && diasRestantes <= alerta.dias_aviso
+  const fechaTexto = alerta?.fecha_vencimiento
+    ? new Date(`${alerta.fecha_vencimiento}T00:00:00`).toLocaleDateString('es-PE')
+    : ''
+
+  useEffect(() => {
+    if (authEvent === 'SIGNED_IN') justSignedIn.current = true
+  }, [authEvent])
+
+  useEffect(() => {
+    if (prevPath.current === location.pathname) return
+    prevPath.current = location.pathname
+    if (debeMostrar && !welcome.open && !justSignedIn.current) setReminderOpen(true)
+    // ponytail: el aviso se engancha a cada cambio de ruta; si acaba de loguear, lo dispara el cierre del welcome
+  }, [location.pathname, debeMostrar, welcome.open])
 
   useEffect(() => {
     if (!user || authEvent !== 'SIGNED_IN' || welcomeShown.current) return
@@ -56,6 +87,9 @@ export function DashboardLayout() {
   const closeWelcome = () => {
     welcomeShown.current = true
     setWelcome({ open: false, nombre: '' })
+    const signedIn = justSignedIn.current
+    justSignedIn.current = false
+    if (debeMostrar && signedIn) setReminderOpen(true)
   }
 
   const handleLogout = async () => {
@@ -160,6 +194,41 @@ export function DashboardLayout() {
           >
             ¡Empezar!
           </button>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reminderOpen} onOpenChange={setReminderOpen}>
+        <DialogContent className="max-w-sm !border-0 !bg-transparent !p-0 [&>button]:hidden">
+          <div className="relative overflow-hidden rounded-xl border border-red-500/60 bg-background p-6 text-center shadow-lg animate-scale-in animate-blink-red">
+            <span className="pointer-events-none absolute -left-3 -top-3 h-12 w-12 rounded-br-3xl bg-gradient-to-br from-red-500 to-yellow-400 animate-corner-blink" />
+            <span className="pointer-events-none absolute -right-3 -top-3 h-12 w-12 rounded-bl-3xl bg-gradient-to-bl from-yellow-400 to-red-500 animate-corner-blink" style={{ animationDelay: '0.2s' }} />
+            <span className="pointer-events-none absolute -bottom-3 -left-3 h-12 w-12 rounded-tr-3xl bg-gradient-to-tr from-yellow-400 to-red-500 animate-corner-blink" style={{ animationDelay: '0.35s' }} />
+            <span className="pointer-events-none absolute -bottom-3 -right-3 h-12 w-12 rounded-tl-3xl bg-gradient-to-tl from-red-500 to-yellow-400 animate-corner-blink" style={{ animationDelay: '0.5s' }} />
+            <DialogHeader className="items-center text-center">
+              <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center rounded-full bg-red-500/15 animate-blink-red">
+                <Bell className="h-8 w-8 text-red-500" />
+              </div>
+              <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-red-500 px-3 py-0.5 text-xs font-bold uppercase tracking-wide text-white animate-pulse">
+                Urgente
+              </span>
+              <DialogTitle className="text-xl font-bold text-red-600">Recordatorio de pago</DialogTitle>
+              <DialogDescription>
+                Su membresía de almacenamiento{' '}
+                {diasRestantes < 0
+                  ? `venció el día ${fechaTexto}.`
+                  : diasRestantes === 0
+                    ? 'vence HOY.'
+                    : `está por vencer el día ${fechaTexto} (faltan ${diasRestantes} ${diasRestantes === 1 ? 'día' : 'días'}).`}{' '}
+                <span className="font-semibold text-foreground">Actualizar pago.</span>
+              </DialogDescription>
+            </DialogHeader>
+            <button
+              onClick={() => setReminderOpen(false)}
+              className="mt-2 w-full rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 btn-press"
+            >
+              Cerrar
+            </button>
+          </div>
         </DialogContent>
       </Dialog>
 
